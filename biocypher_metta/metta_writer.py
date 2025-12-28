@@ -139,15 +139,17 @@ class MeTTaWriter(BaseWriter):
 
     def preprocess_id(self, prev_id, preserve_prefix=False):
         prev_id = str(prev_id)
-        if ':' in prev_id:
-            prefix, local_id = prev_id.split(':', 1)
+        # Preserve URLs while sanitizing surrounding text
+        protected, mapping = self._protect_urls(prev_id)
+        if ':' in protected:
+            prefix, local_id = protected.split(':', 1)
             if preserve_prefix:
                 clean_id = f"{prefix.strip().upper()}_{local_id.strip().replace(' ', '_').upper()}"
-                return clean_id
+                return self._restore_urls(clean_id, mapping)
             else:
                 clean_local = local_id.strip().replace(' ', '_').upper()
-                return clean_local
-        return prev_id.strip().replace(' ', '_').upper()
+                return self._restore_urls(clean_local, mapping)
+        return self._restore_urls(protected.strip().replace(' ', '_').upper(), mapping)
 
     def write_nodes(self, nodes, path_prefix=None, create_dir=True):
         if path_prefix is not None:
@@ -341,13 +343,11 @@ class MeTTaWriter(BaseWriter):
 
     def check_property(self, prop):
         if isinstance(prop, str):
-            # Support http(s)://, http(s)://
-            if re.match(r"^\s*(https?://|http?://)", prop, flags=re.IGNORECASE):
-                return prop.strip()
-            prop = prop.replace(" ", "_").strip("_")
-            prop = prop.replace("->", "-")
-
-            prop = re.sub(r"[^a-zA-Z0-9_:\.-]", "", prop)
+            protected, mapping = self._protect_urls(prop)
+            protected = protected.replace(" ", "_").strip()
+            protected = protected.replace("->", "-")
+            protected = re.sub(r"[^a-zA-Z0-9_:\.-]", "", protected)
+            return self._restore_urls(protected, mapping)
 
         return str(prop)
         
@@ -355,11 +355,42 @@ class MeTTaWriter(BaseWriter):
         if isinstance(label, list):
             labels = []
             for aLabel in label:
-                processed = aLabel.replace(" ", replace_char)
-                labels.append(processed.lower() if lowercase else processed)
+                protected, mapping = self._protect_urls(aLabel)
+                processed = protected.replace(" ", replace_char)
+                processed = processed.lower() if lowercase else processed
+                labels.append(self._restore_urls(processed, mapping))
             return labels
-        processed = label.replace(" ", replace_char)
-        return processed.lower() if lowercase else processed
+
+        protected, mapping = self._protect_urls(label)
+        processed = protected.replace(" ", replace_char)
+        processed = processed.lower() if lowercase else processed
+        return self._restore_urls(processed, mapping)
+
+    # URL preservation helpers
+    URL_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\n\t\"'<>]+", re.IGNORECASE)
+
+    def _protect_urls(self, text: str):
+        """Replace URLs in text with placeholders and return (protected_text, mapping)."""
+        mapping = {}
+
+        def _repl(m):
+            idx = len(mapping)
+            mapping[idx] = m.group(0)
+            return f"__URL_{idx}__"
+
+        protected = re.sub(self.URL_RE, _repl, text)
+        return protected, mapping
+
+    def _restore_urls(self, text: str, mapping: dict):
+        """Restore placeholders in text using mapping produced by _protect_urls."""
+        if not mapping:
+            return text
+
+        def _repl(m):
+            idx = int(m.group(1))
+            return mapping.get(idx, m.group(0))
+
+        return re.sub(r"__URL_(\d+)__", _repl, text, flags=re.IGNORECASE)
 
     def get_parent(self, G, node):
         return nx.dfs_preorder_nodes(G, node, depth_limit=2)

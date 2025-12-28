@@ -44,32 +44,14 @@ import pickle
 
 class OrthologyAssociationAdapter(Adapter):
 
-    def __init__(self, write_properties, add_provenance, dmel_data_filepath,
-                 hsa_hgnc_to_ensemble_map=None,
-                 source_prefix='FlyBase', target_prefix='Ensembl',
-                 source_organism='Drosophila melanogaster', target_organism='Homo sapiens',
-                 source_taxon_id=7227, target_taxon_id=9606):
+    def __init__(self, write_properties, add_provenance, dmel_data_filepath, hsa_hgnc_to_ensemble_map):
         self.dmel_data_filepath = dmel_data_filepath
         self.label = 'orthologs_genes'
         self.type = 'orthology association'
         self.source = 'FLYBASE'
         self.source_url = 'https://flybase.org/'
 
-        # Configurable prefixes / organism info for multi-species support
-        self.source_prefix = source_prefix
-        self.target_prefix = target_prefix
-        self.source_organism = source_organism
-        self.target_organism = target_organism
-        self.source_taxon_id = source_taxon_id
-        self.target_taxon_id = target_taxon_id
-
-        # Optional mapping from HGNC to Ensembl; if not provided we will fall back
-        self.hsa_hgnc2ensemble = None
-        if hsa_hgnc_to_ensemble_map:
-            try:
-                self.hsa_hgnc2ensemble = pickle.load(open(hsa_hgnc_to_ensemble_map, 'rb'))
-            except Exception as e:
-                logger.warning(f"Could not load HGNC->Ensembl map: {e}; proceeding without it.")
+        self.hsa_hgnc2ensemble = pickle.load(open(hsa_hgnc_to_ensemble_map, 'rb'))
 
         super(OrthologyAssociationAdapter, self).__init__(write_properties, add_provenance)
 
@@ -86,37 +68,23 @@ class OrthologyAssociationAdapter(Adapter):
             props = {}
             source = row[0]
             hsa_hgnc_id = row[2]
-
-            # Determine target id using optional mapping; otherwise fall back to HGNC id
-            target_id = None
-            if self.hsa_hgnc2ensemble and hsa_hgnc_id:
-                try:
-                    target_id = self.hsa_hgnc2ensemble[hsa_hgnc_id]
-                except KeyError:
-                    target_id = None
-
-            if not target_id:
-                # fallback: use HGNC identifier if available
-                if hsa_hgnc_id:
-                    target_id = hsa_hgnc_id
-                else:
-                    no_hgnc_id += 1
-                    logger.info(
-                        f'orthology_adapter.py::OrthologyAdapter::get_edges-DMEL: missing HGNC id for row: {row} (skipping)')
-                    continue
-
+            try:
+                target = self.hsa_hgnc2ensemble[ hsa_hgnc_id ]
+            except KeyError as ke:
+                no_hgnc_id += 1
+                logger.info(
+                    f'orthology_adapter.py::OrthologyAdapter::get_edges-DMEL: failed to process for label to load: {self.label}, type to load: {self.type}:\n'
+                    f'Exception: {ke}\n'
+                    f'Missing data:\n {row}'f'\nGenes without HGNC ID: {no_hgnc_id} / {total_rows}'                    
+                )
+                continue
             props['hsa_hgnc_id'] = hsa_hgnc_id
             props['hsa_omim_id'] = row[3]
             props['hsa_hgnc_symbol'] = row[4]
-            try:
-                props['DIOPT_score'] = int(row[5])
-            except Exception:
-                props['DIOPT_score'] = None
+            props['DIOPT_score'] = int(row[5])
             props['hsa_omim_phenotype_ids'] = row[6]
             props['hsa_omim_phenotype_ids_names'] = row[7]
-            props['source_organism'] = self.source_organism
-            props['target_organism'] = self.target_organism
-            props['source_taxon_id'] = self.source_taxon_id
-            props['target_taxon_id'] = self.target_taxon_id
+            props['source_organism'] = 'Drosophila melanogaster'
+            props['target_organism'] = 'Homo sapiens'
 
-            yield f'{self.source_prefix}:{source}', f'{self.target_prefix}:{target_id}', self.label, props
+            yield f'FlyBase:{source}', f'Ensembl:{target}', self.label, props

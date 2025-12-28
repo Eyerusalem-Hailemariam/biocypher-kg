@@ -171,6 +171,7 @@ def show_help() -> None:
     console.print(Panel.fit(help_text, title="Help & Documentation"))
 
 
+
 def check_and_prepare_samples(adapters_config_path: str, selected_adapters: List[str] = None, limit: int = 100) -> List[str]:
     """Ensure sample files referenced by the adapters config exist.
     If a sample is missing, attempt to find a download URL in `config/data_source_config.yaml`
@@ -256,10 +257,7 @@ def check_and_prepare_samples(adapters_config_path: str, selected_adapters: List
             basename = Path(fp).name
             url = None
 
-            # Robust key matching: build a broad set of candidate keys derived from the
-            # basename so the matcher works for many filename shapes. We generate
-            # progressively shorter prefixes and different token joins (underscore,
-            # dash, concatenated) to increase chance of matching a data_source key.
+           
             name_no_ext = basename.split('.')[0]
             tokens = re.split(r'[-_.]+', name_no_ext)
             candidates_set = set()
