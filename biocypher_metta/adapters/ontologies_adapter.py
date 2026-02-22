@@ -36,6 +36,7 @@ class OntologyAdapter(Adapter):
     RESTRICTION_PREDICATES = [HAS_PART, PART_OF]
 
     def __init__(self, write_properties, add_provenance, ontology, type, label, dry_run=False, add_description=False, cache_dir=None, cache_expiration_days=30):
+        self.world = None
         self.cache_dir = cache_dir
         self.cache_expiration_days = cache_expiration_days
         if self.cache_dir and not os.path.exists(self.cache_dir):
